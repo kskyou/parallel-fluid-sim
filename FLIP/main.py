@@ -2,29 +2,29 @@ import taichi as ti
 import numpy as np
 import time
 import cv2
-
+#from attempt_cg import *
 from cg import *
 
 np.set_printoptions(precision=4, linewidth=300)
 
-vec2 = ti.math.vec2
-NUM = 2 ** 16 # total number of particles
-NUM_HALF = 2 ** 8 # must be square root of NUM
-GRID_NUM = 256 # grid dimensions
+# Scale all of the four parameters together
+NUM = 2 ** 14 # total number of particles
+NUM_HALF = 2 ** 7 # must be square root of NUM
+GRID_NUM = 128 # grid dimensions
+SUBSTEPS = 40
 
+vec2 = ti.math.vec2
 GRAVITY = vec2(0.0, -9.8) 
 RHO = 1000
+FLIP = 0.9
 
-FLIP = 0.8
-
-SUBSTEPS = 240
 h = 1.0 / 60 # frame rate
 dt = 1.0 / 60 / SUBSTEPS # simulation rate
 
 WINDOW_SIZE = 1024
-WINDOW_R = 0.8 * 0.3 * 0.5 / NUM_HALF  * 1.6
+WINDOW_R = 0.8 * 0.5 * 0.5 / NUM_HALF
 
-USESOLID = True
+USESOLID = False
 
 @ti.dataclass
 class Particle:
@@ -66,8 +66,8 @@ def init(particles: ti.template()):
     for i in particles:
         x = (i // NUM_HALF) / NUM_HALF
         y = (i % NUM_HALF) / NUM_HALF
-        pos = vec2(1./4 + 1./2 * x, 1./3 + 1./3 * y)
-        #pos = vec2(0.01 + 1./3 * x, 0.01 + 2./3 * y)
+        #pos = vec2(1./6 + 4./6 * x, 1./3 + 1./3 * y)
+        pos = vec2(0.01 + 1./3 * x, 0.01 + 2./3 * y)
         particles[i].x = pos
         particles[i].m = RHO * 2. / 9. / NUM
         vel = vec2(0.0, 0.0) 
@@ -77,6 +77,7 @@ def init(particles: ti.template()):
 @ti.kernel
 def init_solid(solid: ti.template()):
     for i,j in solid:
+        '''
         if solid[i,j] > 128:
             solid[i,j] = 0
         else:
@@ -86,7 +87,7 @@ def init_solid(solid: ti.template()):
         y = (j + 0.5) / GRID_NUM
         if (y + ti.abs(x - 0.5)) < 0.1:
             solid[i,j] = 1
-        '''
+
 @ti.kernel
 def pixels_solid(solid: ti.template(), pixels: ti.template()):
     RATIO = WINDOW_SIZE // GRID_NUM
@@ -399,8 +400,8 @@ t = 0.0
 frame = 0
 init(particles)
 if USESOLID:
-    im = cv2.imread("418.png")
-    solid.from_numpy(im[:,:,0])
+    #im = cv2.imread("418.png")
+    ##solid.from_numpy(im[:,:,0])
     init_solid(solid)
 
 solver = CG(GRID_NUM * GRID_NUM)
@@ -443,9 +444,9 @@ while gui.running:
 
     pos = particles.x.to_numpy()
     pixels_solid(solid, pixels)
-    gui.set_image(pixels)
+    ui.set_image(pixels)
     #gui.lines(begin=lines_h_b, end=lines_h_e, radius=1, color=0x068587)
-    #gui.lines(begin=lines_v_b, end=lines_v_e, radius=1, color=0x068587)
+    gui.lines(begin=lines_v_b, end=lines_v_e, radius=1, color=0x068587)
     gui.circles(pos, radius=(WINDOW_R * WINDOW_SIZE))
 
     filename = f'out/frame_{frame:03d}.png' 
@@ -453,11 +454,12 @@ while gui.running:
 
     vtime = solver.vectortime
     mtime = solver.matmultime
+    rtime = solver.reducetime
     cgiters = solver.cgiters
     total_time = time.time() - overall_time
 
     if frame % 10 == 0:
-        print("Frame %s, total %s, solver %s, vector %s, matrix %s, cgiters %s" % (frame, total_time, solver_time, vtime, mtime, cgiters))
+        print("Frame %s, total %s, solver %s, reduce %s, vector %s, matrix %s, cgiters %s" % (frame, total_time, solver_time, rtime, vtime, mtime, cgiters))
 
     if frame == 300:
         exit()
